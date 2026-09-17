@@ -1,7 +1,7 @@
 import { questions, states } from './questions.js';
 import {
-  formatBrazilianPhone, normalizeEmail, normalizeName, validateEmail,
-  validateName, validatePhone, validateState,
+  formatBrazilianPhone, normalizeEmail, normalizeName, validateEmail, validateName,
+  validatePhone, validateState,
 } from './validation.js';
 import { classifyLead } from './qualification.js';
 import { createWhatsAppLink } from './whatsapp.js';
@@ -16,6 +16,7 @@ let answers = initialAnswers();
 let currentStep = -1;
 let navigationLocked = false;
 let autoAdvanceTimer;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 function element(tag, attributes = {}, text = '') {
   const node = document.createElement(tag);
@@ -82,6 +83,12 @@ function showError(control, errorNode, message) {
   control.focus();
 }
 
+function clearError(control, errorNode) {
+  errorNode.hidden = true;
+  errorNode.textContent = '';
+  control.removeAttribute('aria-invalid');
+}
+
 function createTextQuestion(question, form) {
   const group = element('div', { className: 'field-group' });
   const label = element('label', { for: question.id }, question.label);
@@ -93,16 +100,24 @@ function createTextQuestion(question, form) {
   input.value = question.id === 'phone' ? formatBrazilianPhone(answers.phone) : answers[question.id];
   const error = createError(`${question.id}-error`);
   if (question.id === 'phone') {
-    input.addEventListener('input', () => { input.value = formatBrazilianPhone(input.value); });
+    input.addEventListener('input', () => {
+      input.value = formatBrazilianPhone(input.value);
+      clearError(input, error);
+    });
+  } else {
+    input.addEventListener('input', () => clearError(input, error));
   }
+  input.addEventListener('blur', () => {
+    if (question.id === 'name') input.value = normalizeName(input.value);
+    if (question.id === 'email') input.value = normalizeEmail(input.value);
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (navigationLocked) return;
     const result = question.id === 'name' ? validateName(input.value)
       : question.id === 'phone' ? validatePhone(input.value) : validateEmail(input.value);
     if (!result.valid) return showError(input, error, result.error);
-    input.removeAttribute('aria-invalid');
-    error.hidden = true;
+    clearError(input, error);
     answers[question.id] = result.value;
     goNext();
   });
@@ -118,6 +133,7 @@ function createStateQuestion(form) {
   states.forEach(([code, name]) => select.append(element('option', { value: code }, name)));
   select.value = answers.state;
   const error = createError('state-error');
+  select.addEventListener('change', () => clearError(select, error));
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const result = validateState(select.value, states.map(([code]) => code));
@@ -148,7 +164,7 @@ function createChoiceQuestion(question, form) {
       autoAdvanceTimer = setTimeout(() => {
         navigationLocked = false;
         renderStep(currentStep + 1);
-      }, 320);
+      }, reducedMotion.matches ? 40 : 320);
     });
     label.append(input, marker, text);
     fieldset.append(label);
@@ -167,7 +183,10 @@ function createConsentQuestion(form) {
     const label = element('label', { className: 'choice choice--checkbox' });
     const input = element('input', { type: 'checkbox', id, name: id, ...(index === 0 ? { 'data-autofocus': '' } : {}) });
     input.checked = answers[id];
-    input.addEventListener('change', () => { answers[id] = input.checked; });
+    input.addEventListener('change', () => {
+      answers[id] = input.checked;
+      error.hidden = true;
+    });
     label.append(input, element('span', { className: 'choice__marker', 'aria-hidden': 'true' }), element('span', { className: 'choice__text' }, text));
     fieldset.append(label);
   });
@@ -208,7 +227,7 @@ function renderStep(index) {
   else if (question.type === 'select') createStateQuestion(form);
   else if (question.type === 'choice') createChoiceQuestion(question, form);
   else createConsentQuestion(form);
-  const nav = element('div', { className: 'step-nav' });
+  const topbar = element('div', { className: `step-topbar${currentStep === 0 ? ' step-topbar--no-back' : ''}` });
   if (currentStep > 0) {
     const back = createButton('Voltar', 'back-button');
     back.setAttribute('aria-label', `Voltar para a etapa ${currentStep}`);
@@ -217,10 +236,11 @@ function renderStep(index) {
       navigationLocked = false;
       renderStep(currentStep - 1);
     });
-    nav.append(back);
+    topbar.append(back);
   }
-  card.append(title, form, nav);
-  shell.append(createProgress(), card);
+  topbar.append(createProgress());
+  card.append(title, form);
+  shell.append(topbar, card);
   app.append(shell);
   focusPrimary();
 }
@@ -258,4 +278,3 @@ renderIntro();
 // A URL da Política de Privacidade deverá ser configurada aqui quando o documento
 // definitivo existir. Nesta fase, nenhum link vazio ou política fictícia é exibido.
 export const PRIVACY_POLICY_URL = null;
-
