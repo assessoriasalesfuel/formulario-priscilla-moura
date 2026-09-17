@@ -26,6 +26,8 @@ Aplicação web mobile-first para uma análise inicial rápida de potenciais cli
 │       ├── whatsapp.js        # configuração e criação do link
 │       └── leadGateway.js     # contrato da futura persistência (desativado)
 ├── test/                      # testes dos módulos puros
+├── Dockerfile                 # imagem de produção com Node.js 22
+├── .dockerignore              # exclusões do contexto de build
 ├── server.js                  # servidor e health check
 ├── package.json
 └── README.md
@@ -47,6 +49,17 @@ npm run dev
 ```
 
 É possível alterar a porta pela variável de ambiente `PORT`.
+
+## Docker
+
+Para construir e executar a imagem localmente:
+
+```bash
+docker build -t formulario-priscilla-moura .
+docker run --rm -p 3000:3000 formulario-priscilla-moura
+```
+
+A imagem utiliza Node.js 22 Alpine, instala somente dependências de produção, executa como usuário sem privilégios e verifica periodicamente a rota `/health`. Em plataformas como EasyPanel, selecione a opção **Dockerfile** e mantenha a porta da aplicação em `3000`, salvo quando a plataforma fornecer `PORT` automaticamente.
 
 ## Testes
 
@@ -94,10 +107,9 @@ O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada 
 - Não há Google Sheets, banco de dados, classificação no servidor, proteção antispam, Meta Pixel, Meta Conversions API, UTMs ou salvamento parcial externo.
 - A URL da Política de Privacidade ainda não está configurada; o ponto futuro está documentado em `app.js` e nenhum link fictício é mostrado.
 - Logo e favicons são provisoriamente substituídos por texto.
-- Não há Docker, GitHub, EasyPanel ou deploy.
+- Ainda não há configuração específica de EasyPanel nem deploy concluído.
 - A aplicação ainda não está pronta para anúncios ou produção.
 
 ## Próximas integrações
 
-Em uma fase futura: endpoint seguro no servidor, validação e classificação server-side, persistência no Google Sheets, proteção antispam e limitação de requisições, política de privacidade definitiva, rastreamento consentido para Meta Ads e processo de deploy.
-
+Em uma fase futura: endpoint seguro no servidor, validação e classificação server-side, persistência no Google Sheets, proteção antispam e limitação de requisições, política de privacidade definitiva, rastreamento consentido para Meta Ads e configuração final do ambiente de deploy.

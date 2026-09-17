@@ -1,0 +1,13 @@
+.git
+.gitignore
+.node-portable
+.node-portable.zip
+node_modules
+test
+.env
+npm-debug.log*
+coverage
+README.md
+.DS_Store
+Thumbs.db
+
