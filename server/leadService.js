@@ -3,17 +3,14 @@ import { classifyLead } from '../public/js/qualification.js';
 import { questions } from '../public/js/questions.js';
 import { validateEmail, validateName, validatePhone } from '../public/js/validation.js';
 import { createWhatsAppLink } from '../public/js/whatsapp.js';
+import {
+  assertCanonicalLeadRow,
+  COLUMN_COUNT,
+  LEAD_COLUMNS as COLUMNS,
+  normalizeLeadRow,
+} from './leadSchema.js';
 
-export const COLUMN_COUNT = 30;
-
-const COLUMNS = Object.freeze({
-  leadId: 0, createdAt: 1, status: 2, priority: 3, name: 4, phone: 5, email: 6, ddd: 7,
-  situation: 8, concern: 9, urgency: 10, hiring: 11, reason: 12, lastStep: 13, updatedAt: 14,
-  completedAt: 15, whatsappAccessed: 16, whatsappAccessedAt: 17, dataConsent: 18,
-  contactConsent: 19, consentAt: 20,
-  utmSource: 21, utmMedium: 22, utmCampaign: 23, utmContent: 24, utmTerm: 25,
-  fbclid: 26, entryUrl: 27, referrer: 28, device: 29,
-});
+export { COLUMN_COUNT };
 
 const ATTRIBUTION_LIMITS = Object.freeze({
   utmSource: 255,
@@ -23,13 +20,10 @@ const ATTRIBUTION_LIMITS = Object.freeze({
   utmTerm: 255,
   fbclid: 512,
   entryUrl: 2000,
-  referrer: 2000,
 });
 const DEVICES = new Set(['Mobile', 'Tablet', 'Desktop']);
-const CREATE_FIELDS = new Set(['name', 'phone', 'email', 'lastStep', ...Object.keys(ATTRIBUTION_LIMITS), 'device']);
+const CREATE_FIELDS = new Set(['name', 'phone', 'email', ...Object.keys(ATTRIBUTION_LIMITS), 'device']);
 
-const PRIORITY_LABELS = Object.freeze({ urgent: 'urgente', high: 'alta', normal: 'normal' });
-const STEP_IDS = new Set(questions.map(({ id }) => id));
 const OPTION_LABELS = new Map(
   questions.flatMap(({ id, options = [] }) => options.map(([value, label]) => [`${id}:${value}`, label])),
 );
@@ -72,20 +66,10 @@ function validateChoice(id, value) {
   return value;
 }
 
-function validateLastStep(value) {
-  if (!STEP_IDS.has(value)) throw new LeadServiceError('Última etapa inválida.');
-  return value;
-}
-
-function padRow(row = []) {
-  return Array.from({ length: COLUMN_COUNT }, (_, index) => row[index] ?? '');
-}
-
 function applyPersonal(row, personal) {
   row[COLUMNS.name] = protectSheetText(personal.name);
   row[COLUMNS.phone] = personal.phone;
   row[COLUMNS.email] = protectSheetText(personal.email);
-  row[COLUMNS.ddd] = personal.phone.slice(0, 2);
 }
 
 export function normalizeAttribution(payload = {}) {
@@ -118,7 +102,7 @@ export function createLeadService({ repository, now = () => new Date(), createId
     if (typeof leadId !== 'string' || !leadId.trim()) throw new LeadServiceError('Lead ID inválido.');
     const match = await repository.findByLeadId(leadId);
     if (!match) throw new LeadServiceError('Lead não encontrado.', 404, 'LEAD_NOT_FOUND');
-    return { rowNumber: match.rowNumber, row: padRow(match.row) };
+    return { rowNumber: match.rowNumber, row: normalizeLeadRow(match.row) };
   }
 
   async function create(payload) {
@@ -128,18 +112,15 @@ export function createLeadService({ repository, now = () => new Date(), createId
     }
     const personal = validatePersonal(payload);
     const attribution = normalizeAttribution(payload);
-    const lastStep = validateLastStep(payload.lastStep);
     const timestamp = now().toISOString();
     const leadId = createId();
-    const row = padRow();
+    const row = normalizeLeadRow();
     row[COLUMNS.leadId] = leadId;
     row[COLUMNS.createdAt] = timestamp;
     row[COLUMNS.status] = 'Em preenchimento';
     applyPersonal(row, personal);
     applyAttribution(row, attribution);
-    row[COLUMNS.lastStep] = lastStep;
-    row[COLUMNS.updatedAt] = timestamp;
-    await repository.append(row);
+    await repository.append(assertCanonicalLeadRow(row));
     return { leadId, status: 'Em preenchimento' };
   }
 
@@ -160,7 +141,7 @@ export function createLeadService({ repository, now = () => new Date(), createId
 
     async updateLead(leadId, payload) {
       ensureObject(payload);
-      const allowed = new Set(['situation', 'concern', 'urgency', 'hiring', 'lastStep', 'name', 'phone', 'email']);
+      const allowed = new Set(['situation', 'concern', 'urgency', 'hiring', 'name', 'phone', 'email']);
       const keys = Object.keys(payload);
       if (!keys.length || keys.some((key) => !allowed.has(key))) {
         throw new LeadServiceError('Payload de atualização inválido.');
@@ -178,9 +159,7 @@ export function createLeadService({ repository, now = () => new Date(), createId
       for (const id of ['situation', 'concern', 'urgency', 'hiring']) {
         if (payload[id] !== undefined) row[COLUMNS[id]] = toSheetLabel(id, validateChoice(id, payload[id]));
       }
-      if (payload.lastStep !== undefined) row[COLUMNS.lastStep] = validateLastStep(payload.lastStep);
-      row[COLUMNS.updatedAt] = now().toISOString();
-      await repository.update(rowNumber, row);
+      await repository.update(rowNumber, assertCanonicalLeadRow(row));
       return { leadId, status: row[COLUMNS.status] };
     },
 
@@ -202,37 +181,26 @@ export function createLeadService({ repository, now = () => new Date(), createId
 
       const { rowNumber, row } = await findLead(leadId);
       const result = classifyLead(normalized);
-      const timestamp = now().toISOString();
       applyPersonal(row, personal);
       for (const id of ['situation', 'concern', 'urgency', 'hiring']) row[COLUMNS[id]] = toSheetLabel(id, normalized[id]);
       row[COLUMNS.status] = result.classification === 'qualified' ? 'Qualificado' : 'Desqualificado';
-      row[COLUMNS.priority] = PRIORITY_LABELS[result.priority];
       row[COLUMNS.reason] = protectSheetText(result.reason);
-      row[COLUMNS.lastStep] = 'consent';
-      row[COLUMNS.updatedAt] = timestamp;
-      row[COLUMNS.completedAt] ||= timestamp;
+      row[COLUMNS.completedAt] ||= now().toISOString();
       row[COLUMNS.dataConsent] = 'Sim';
       row[COLUMNS.contactConsent] = 'Sim';
-      row[COLUMNS.consentAt] ||= timestamp;
-      await repository.update(rowNumber, row);
+      await repository.update(rowNumber, assertCanonicalLeadRow(row));
 
       return {
         classification: result.classification,
-        priority: result.priority,
         qualified: result.classification === 'qualified',
         leadId,
       };
     },
 
     async registerWhatsAppAccess(leadId) {
-      const { rowNumber, row } = await findLead(leadId);
-      if (row[COLUMNS.status] !== 'Qualificado' || !row[COLUMNS.completedAt]) {
+      const { row } = await findLead(leadId);
+      if (row[COLUMNS.status] !== 'Qualificado') {
         throw new LeadServiceError('WhatsApp indisponível para este lead.', 403, 'WHATSAPP_NOT_ALLOWED');
-      }
-      if (row[COLUMNS.whatsappAccessed] !== 'Sim') {
-        row[COLUMNS.whatsappAccessed] = 'Sim';
-        row[COLUMNS.whatsappAccessedAt] = now().toISOString();
-        await repository.update(rowNumber, row);
       }
       return { link: createWhatsAppLink() };
     },

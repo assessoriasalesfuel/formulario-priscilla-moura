@@ -8,7 +8,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "migrate:sheet:dry": "node scripts/migrateSheetColumns.js --dry-run",
+    "migrate:sheet": "node scripts/migrateSheetColumns.js"
   },
   "engines": {
     "node": ">=22.0.0"

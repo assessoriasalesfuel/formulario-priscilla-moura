@@ -1,14 +1,20 @@
 import { google } from 'googleapis';
-
-const SHEET_NAME = 'Leads';
-const DATA_RANGE = `'${SHEET_NAME}'!A2:AD`;
+import {
+  assertCanonicalLeadRow,
+  hasCanonicalLeadHeaders,
+  LEAD_DATA_RANGE,
+  LEAD_HEADER_RANGE,
+  LEAD_LAST_COLUMN,
+  LEAD_SHEET_NAME,
+  normalizeLeadRow,
+} from './leadSchema.js';
 
 export class GoogleSheetsError extends Error {
-  constructor(message, cause) {
+  constructor(message, cause, code = 'SHEETS_UNAVAILABLE') {
     super(message, { cause });
     this.name = 'GoogleSheetsError';
     this.statusCode = 503;
-    this.code = 'SHEETS_UNAVAILABLE';
+    this.code = code;
   }
 }
 
@@ -27,6 +33,7 @@ function readConfiguration(environment) {
 export function createGoogleSheetsRepository({ environment = process.env, sheetsClient } = {}) {
   let client = sheetsClient;
   let spreadsheetId;
+  let schemaValidation;
 
   async function getClient() {
     if (client && spreadsheetId) return { client, spreadsheetId };
@@ -55,12 +62,37 @@ export function createGoogleSheetsRepository({ environment = process.env, sheets
     }
   }
 
+  async function ensureCanonicalSchema({ client: sheets, spreadsheetId: id }) {
+    if (!schemaValidation) {
+      schemaValidation = sheets.spreadsheets.values.get({
+        spreadsheetId: id,
+        range: LEAD_HEADER_RANGE,
+      }).then((response) => {
+        const headers = response.data.values?.[0] ?? [];
+        if (!hasCanonicalLeadHeaders(headers)) {
+          throw new GoogleSheetsError(
+            'O cabeçalho da aba Leads não corresponde ao schema esperado de 22 colunas.',
+            undefined,
+            'SHEETS_SCHEMA_MISMATCH',
+          );
+        }
+      }).catch((error) => {
+        schemaValidation = undefined;
+        throw error;
+      });
+    }
+    await schemaValidation;
+  }
+
   return {
     async append(row) {
-      return execute(async ({ client: sheets, spreadsheetId: id }) => {
+      return execute(async (context) => {
+        await ensureCanonicalSchema(context);
+        assertCanonicalLeadRow(row);
+        const { client: sheets, spreadsheetId: id } = context;
         const response = await sheets.spreadsheets.values.append({
           spreadsheetId: id,
-          range: DATA_RANGE,
+          range: LEAD_DATA_RANGE,
           valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS',
           requestBody: { values: [row] },
@@ -72,20 +104,25 @@ export function createGoogleSheetsRepository({ environment = process.env, sheets
     },
 
     async findByLeadId(leadId) {
-      return execute(async ({ client: sheets, spreadsheetId: id }) => {
-        const response = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: DATA_RANGE });
+      return execute(async (context) => {
+        await ensureCanonicalSchema(context);
+        const { client: sheets, spreadsheetId: id } = context;
+        const response = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: LEAD_DATA_RANGE });
         const rows = response.data.values ?? [];
         const index = rows.findIndex((row) => row[0] === leadId);
         if (index === -1) return null;
-        return { rowNumber: index + 2, row: rows[index] };
+        return { rowNumber: index + 2, row: normalizeLeadRow(rows[index]) };
       });
     },
 
     async update(rowNumber, row) {
-      return execute(async ({ client: sheets, spreadsheetId: id }) => {
+      return execute(async (context) => {
+        await ensureCanonicalSchema(context);
+        assertCanonicalLeadRow(row);
+        const { client: sheets, spreadsheetId: id } = context;
         const response = await sheets.spreadsheets.values.update({
           spreadsheetId: id,
-          range: `'${SHEET_NAME}'!A${rowNumber}:AD${rowNumber}`,
+          range: `'${LEAD_SHEET_NAME}'!A${rowNumber}:${LEAD_LAST_COLUMN}${rowNumber}`,
           valueInputOption: 'RAW',
           requestBody: { values: [row] },
         });
@@ -96,4 +133,3 @@ export function createGoogleSheetsRepository({ environment = process.env, sheets
     },
   };
 }
-

@@ -5,7 +5,6 @@ import { captureAttribution, classifyDevice } from '../public/js/attribution.js'
 function capture(search = '', overrides = {}) {
   return captureAttribution({
     location: { search, href: `https://example.com/form${search}#etapa` },
-    documentRef: { referrer: '' },
     navigatorRef: { userAgent: 'Desktop Browser', maxTouchPoints: 0 },
     viewportWidth: 1440,
     ...overrides,
@@ -40,15 +39,6 @@ test('captura URL de entrada sem fragmento', () => {
   assert.equal(capture('?utm_source=meta').entryUrl, 'https://example.com/form?utm_source=meta');
 });
 
-test('preserva referrer vazio sem inventar valor', () => {
-  assert.equal(capture().referrer, '');
-});
-
-test('captura referrer informado', () => {
-  const result = capture('', { documentRef: { referrer: 'https://referencia.example/' } });
-  assert.equal(result.referrer, 'https://referencia.example/');
-});
-
 test('classifica somente categorias genéricas de dispositivo', () => {
   assert.equal(classifyDevice({ userAgent: 'Mozilla iPhone', viewportWidth: 390 }), 'Mobile');
   assert.equal(classifyDevice({ userAgent: 'Mozilla iPad', viewportWidth: 820, maxTouchPoints: 5 }), 'Tablet');
@@ -58,7 +48,10 @@ test('classifica somente categorias genéricas de dispositivo', () => {
 test('ausência de parâmetros retorna campos de atribuição vazios', () => {
   assert.deepEqual(capture(), {
     utmSource: '', utmMedium: '', utmCampaign: '', utmContent: '', utmTerm: '', fbclid: '',
-    entryUrl: 'https://example.com/form', referrer: '', device: 'Desktop',
+    entryUrl: 'https://example.com/form', device: 'Desktop',
   });
 });
 
+test('não captura Referrer', () => {
+  assert.equal('referrer' in capture(), false);
+});

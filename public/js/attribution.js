@@ -20,7 +20,6 @@ export function classifyDevice({ userAgent = '', viewportWidth = 0, maxTouchPoin
 
 export function captureAttribution({
   location = globalThis.window?.location,
-  documentRef = globalThis.document,
   navigatorRef = globalThis.navigator,
   viewportWidth = globalThis.window?.innerWidth ?? 0,
 } = {}) {
@@ -42,7 +41,6 @@ export function captureAttribution({
   return {
     ...attribution,
     entryUrl,
-    referrer: documentRef?.referrer ?? '',
     device: classifyDevice({
       userAgent: navigatorRef?.userAgent ?? '',
       viewportWidth,
@@ -50,4 +48,3 @@ export function captureAttribution({
     }),
   };
 }
-

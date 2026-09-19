@@ -111,7 +111,6 @@ async function ensureLeadCreated() {
       name: answers.name,
       phone: answers.phone,
       email: answers.email,
-      lastStep: 'email',
       ...attribution,
     }, creationKey).then((result) => {
       leadId = result.leadId;
@@ -159,10 +158,10 @@ function createTextQuestion(question, form) {
     submitButton.disabled = true;
     try {
       if (question.id === 'email') {
-        if (leadId) await updateLead(leadId, { email: result.value, lastStep: question.id });
+        if (leadId) await updateLead(leadId, { email: result.value });
         else await ensureLeadCreated();
       }
-      else if (leadId) await updateLead(leadId, { [question.id]: result.value, lastStep: question.id });
+      else if (leadId) await updateLead(leadId, { [question.id]: result.value });
       goNext();
     } catch (saveError) {
       showError(input, error, friendlySaveError(saveError));
@@ -195,7 +194,7 @@ function createChoiceQuestion(question, form) {
       error.hidden = true;
       autoAdvanceTimer = setTimeout(async () => {
         try {
-          await updateLead(leadId, { [question.id]: value, lastStep: question.id });
+          await updateLead(leadId, { [question.id]: value });
           navigationLocked = false;
           renderStep(currentStep + 1);
         } catch (saveError) {

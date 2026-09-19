@@ -34,7 +34,7 @@ async function withServer(run) {
   }
 }
 
-const personal = { name: 'Ana Lúcia', phone: '27998737944', email: 'ana@example.com', lastStep: 'email' };
+const personal = { name: 'Ana Lúcia', phone: '27998737944', email: 'ana@example.com' };
 const answers = {
   name: 'Ana Lúcia', phone: '27998737944', email: 'ana@example.com',
   situation: 'protective_measure_received', concern: 'children_contact', urgency: 'deadline_48h',
@@ -53,7 +53,7 @@ test('endpoints executam criação, atualização, conclusão e acesso ao WhatsA
 
     const updateResponse = await fetch(`${baseUrl}/api/leads/${leadId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ situation: 'protective_measure_received', lastStep: 'situation' }),
+      body: JSON.stringify({ situation: 'protective_measure_received' }),
     });
     assert.equal(updateResponse.status, 200);
 
@@ -61,7 +61,7 @@ test('endpoints executam criação, atualização, conclusão e acesso ao WhatsA
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(answers),
     });
     assert.deepEqual(await completeResponse.json(), {
-      classification: 'qualified', priority: 'urgent', qualified: true, leadId,
+      classification: 'qualified', qualified: true, leadId,
     });
 
     const whatsappResponse = await fetch(`${baseUrl}/api/leads/${leadId}/whatsapp`, { method: 'POST' });
