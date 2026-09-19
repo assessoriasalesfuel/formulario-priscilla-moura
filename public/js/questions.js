@@ -1,13 +1,3 @@
-export const states = [
-  ['AC', 'Acre'], ['AL', 'Alagoas'], ['AP', 'Amapá'], ['AM', 'Amazonas'],
-  ['BA', 'Bahia'], ['CE', 'Ceará'], ['DF', 'Distrito Federal'], ['ES', 'Espírito Santo'],
-  ['GO', 'Goiás'], ['MA', 'Maranhão'], ['MT', 'Mato Grosso'], ['MS', 'Mato Grosso do Sul'],
-  ['MG', 'Minas Gerais'], ['PA', 'Pará'], ['PB', 'Paraíba'], ['PR', 'Paraná'],
-  ['PE', 'Pernambuco'], ['PI', 'Piauí'], ['RJ', 'Rio de Janeiro'], ['RN', 'Rio Grande do Norte'],
-  ['RS', 'Rio Grande do Sul'], ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'],
-  ['SP', 'São Paulo'], ['SE', 'Sergipe'], ['TO', 'Tocantins'],
-];
-
 export const questions = [
   {
     id: 'name', type: 'text', title: 'Como podemos chamar você?', label: 'Nome completo',
@@ -21,7 +11,6 @@ export const questions = [
     id: 'email', type: 'email', title: 'Qual é o seu melhor e-mail?', label: 'E-mail',
     autocomplete: 'email', inputMode: 'email', maxLength: 254,
   },
-  { id: 'state', type: 'select', title: 'Em qual estado está acontecendo a situação?' },
   {
     id: 'situation', type: 'choice', title: 'Qual opção mais se aproxima da sua situação?',
     options: [
@@ -66,4 +55,3 @@ export const questions = [
   },
   { id: 'consent', type: 'consent', title: 'Podemos analisar suas respostas e entrar em contato?' },
 ];
-

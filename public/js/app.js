@@ -1,20 +1,23 @@
-import { questions, states } from './questions.js';
+import { questions } from './questions.js';
 import {
   formatBrazilianPhone, normalizeEmail, normalizeName, validateEmail, validateName,
-  validatePhone, validateState,
+  validatePhone,
 } from './validation.js';
-import { classifyLead } from './qualification.js';
-import { createWhatsAppLink } from './whatsapp.js';
+import { completeLead, createLead, registerWhatsAppAccess, updateLead } from './leadGateway.js';
 
 const app = document.querySelector('#app');
 const initialAnswers = () => ({
-  name: '', phone: '', email: '', state: '', situation: '', concern: '', urgency: '', hiring: '',
+  name: '', phone: '', email: '', situation: '', concern: '', urgency: '', hiring: '',
   dataConsent: false, contactConsent: false,
 });
 
 let answers = initialAnswers();
 let currentStep = -1;
 let navigationLocked = false;
+let submitting = false;
+let leadId = null;
+let leadCreationPromise = null;
+let creationKey = crypto.randomUUID();
 let autoAdvanceTimer;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -89,6 +92,29 @@ function clearError(control, errorNode) {
   control.removeAttribute('aria-invalid');
 }
 
+function friendlySaveError(error) {
+  return error?.message || 'Não foi possível salvar suas respostas. Tente novamente.';
+}
+
+async function ensureLeadCreated() {
+  if (leadId) return leadId;
+  if (!leadCreationPromise) {
+    leadCreationPromise = createLead({
+      name: answers.name,
+      phone: answers.phone,
+      email: answers.email,
+      lastStep: 'email',
+    }, creationKey).then((result) => {
+      leadId = result.leadId;
+      return leadId;
+    }).catch((error) => {
+      leadCreationPromise = null;
+      throw error;
+    });
+  }
+  return leadCreationPromise;
+}
+
 function createTextQuestion(question, form) {
   const group = element('div', { className: 'field-group' });
   const label = element('label', { for: question.id }, question.label);
@@ -111,44 +137,40 @@ function createTextQuestion(question, form) {
     if (question.id === 'name') input.value = normalizeName(input.value);
     if (question.id === 'email') input.value = normalizeEmail(input.value);
   });
-  form.addEventListener('submit', (event) => {
+  const submitButton = element('button', { type: 'submit', className: 'button button--primary' }, 'Continuar');
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (navigationLocked) return;
+    if (navigationLocked || submitting) return;
     const result = question.id === 'name' ? validateName(input.value)
       : question.id === 'phone' ? validatePhone(input.value) : validateEmail(input.value);
     if (!result.valid) return showError(input, error, result.error);
     clearError(input, error);
     answers[question.id] = result.value;
-    goNext();
+    submitting = true;
+    submitButton.disabled = true;
+    try {
+      if (question.id === 'email') {
+        if (leadId) await updateLead(leadId, { email: result.value, lastStep: question.id });
+        else await ensureLeadCreated();
+      }
+      else if (leadId) await updateLead(leadId, { [question.id]: result.value, lastStep: question.id });
+      goNext();
+    } catch (saveError) {
+      showError(input, error, friendlySaveError(saveError));
+    } finally {
+      submitting = false;
+      submitButton.disabled = false;
+    }
   });
   group.append(label, input, error);
-  form.append(group, element('button', { type: 'submit', className: 'button button--primary' }, 'Continuar'));
-}
-
-function createStateQuestion(form) {
-  const group = element('div', { className: 'field-group' });
-  const label = element('label', { for: 'state' }, 'Estado');
-  const select = element('select', { id: 'state', name: 'state', required: '', 'aria-describedby': 'state-error', 'data-autofocus': '' });
-  select.append(element('option', { value: '' }, 'Selecione um estado'));
-  states.forEach(([code, name]) => select.append(element('option', { value: code }, name)));
-  select.value = answers.state;
-  const error = createError('state-error');
-  select.addEventListener('change', () => clearError(select, error));
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const result = validateState(select.value, states.map(([code]) => code));
-    if (!result.valid) return showError(select, error, result.error);
-    answers.state = result.value;
-    goNext();
-  });
-  group.append(label, select, error);
-  form.append(group, element('button', { type: 'submit', className: 'button button--primary' }, 'Continuar'));
+  form.append(group, submitButton);
 }
 
 function createChoiceQuestion(question, form) {
-  const fieldset = element('fieldset', { className: 'choice-list', 'aria-describedby': `${question.id}-hint` });
+  const fieldset = element('fieldset', { className: 'choice-list', 'aria-describedby': `${question.id}-hint ${question.id}-error` });
   const legend = element('legend', { className: 'sr-only' }, question.title);
   const hint = element('p', { id: `${question.id}-hint`, className: 'selection-hint' }, 'Selecione uma opção para continuar.');
+  const error = createError(`${question.id}-error`);
   fieldset.append(legend, hint);
   question.options.forEach(([value, labelText], index) => {
     const label = element('label', { className: 'choice' });
@@ -161,15 +183,26 @@ function createChoiceQuestion(question, form) {
       answers[question.id] = value;
       navigationLocked = true;
       form.querySelectorAll('input').forEach((item) => { item.disabled = true; });
-      autoAdvanceTimer = setTimeout(() => {
-        navigationLocked = false;
-        renderStep(currentStep + 1);
+      error.hidden = true;
+      autoAdvanceTimer = setTimeout(async () => {
+        try {
+          await updateLead(leadId, { [question.id]: value, lastStep: question.id });
+          navigationLocked = false;
+          renderStep(currentStep + 1);
+        } catch (saveError) {
+          error.textContent = friendlySaveError(saveError);
+          error.hidden = false;
+          input.checked = false;
+          form.querySelectorAll('input').forEach((item) => { item.disabled = false; });
+          navigationLocked = false;
+          input.focus();
+        }
       }, reducedMotion.matches ? 40 : 320);
     });
     label.append(input, marker, text);
     fieldset.append(label);
   });
-  form.append(fieldset);
+  form.append(fieldset, error);
 }
 
 function createConsentQuestion(form) {
@@ -192,8 +225,10 @@ function createConsentQuestion(form) {
   });
   const error = createError('consent-error');
   fieldset.setAttribute('aria-describedby', 'consent-error');
-  form.addEventListener('submit', (event) => {
+  const submitButton = element('button', { type: 'submit', className: 'button button--primary' }, 'Concluir');
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (submitting) return;
     const controls = [...form.querySelectorAll('input[type="checkbox"]')];
     answers.dataConsent = controls[0].checked;
     answers.contactConsent = controls[1].checked;
@@ -203,9 +238,20 @@ function createConsentQuestion(form) {
       controls.find((control) => !control.checked)?.focus();
       return;
     }
-    renderResult(classifyLead(answers));
+    submitting = true;
+    submitButton.disabled = true;
+    try {
+      const result = await completeLead(leadId, answers);
+      renderResult(result);
+    } catch (saveError) {
+      error.textContent = friendlySaveError(saveError);
+      error.hidden = false;
+    } finally {
+      submitting = false;
+      submitButton.disabled = false;
+    }
   });
-  form.append(fieldset, error, element('button', { type: 'submit', className: 'button button--primary' }, 'Concluir'));
+  form.append(fieldset, error, submitButton);
 }
 
 function goNext() {
@@ -224,7 +270,6 @@ function renderStep(index) {
   const title = element('h1', { id: 'question-title', tabindex: '-1' }, question.title);
   const form = element('form', { novalidate: '' });
   if (question.type === 'text' || question.type === 'tel' || question.type === 'email') createTextQuestion(question, form);
-  else if (question.type === 'select') createStateQuestion(form);
   else if (question.type === 'choice') createChoiceQuestion(question, form);
   else createConsentQuestion(form);
   const topbar = element('div', { className: `step-topbar${currentStep === 0 ? ' step-topbar--no-back' : ''}` });
@@ -248,7 +293,7 @@ function renderStep(index) {
 function renderResult(result) {
   currentStep = questions.length;
   clearApp();
-  const qualified = result.classification === 'qualified';
+  const qualified = result.qualified === true;
   const card = element('section', { className: 'card card--result', 'aria-labelledby': 'result-title' });
   card.append(element('p', { className: 'eyebrow' }, 'Análise inicial concluída'));
   const title = element('h1', { id: 'result-title', tabindex: '-1' }, qualified ? 'O próximo passo é falar com a equipe' : 'Formulário concluído');
@@ -257,14 +302,36 @@ function renderResult(result) {
     : 'Neste momento, este canal de atendimento particular pode não ser o mais adequado para a sua necessidade.');
   card.append(title, copy);
   if (qualified) {
-    const link = element('a', { className: 'button button--primary', href: createWhatsAppLink(), target: '_blank', rel: 'noopener noreferrer' }, 'Falar pelo WhatsApp');
+    const link = createButton('Falar pelo WhatsApp');
+    link.className = 'button button--primary';
+    const accessError = createError('whatsapp-error');
+    link.addEventListener('click', async () => {
+      if (submitting) return;
+      submitting = true;
+      link.disabled = true;
+      accessError.hidden = true;
+      try {
+        const { link: whatsappLink } = await registerWhatsAppAccess(leadId);
+        window.open(whatsappLink, '_blank', 'noopener,noreferrer');
+      } catch (saveError) {
+        accessError.textContent = friendlySaveError(saveError);
+        accessError.hidden = false;
+      } finally {
+        submitting = false;
+        link.disabled = false;
+      }
+    });
     const disclaimer = element('p', { className: 'disclaimer' }, 'O preenchimento do formulário não representa contratação ou início de atendimento jurídico.');
-    card.append(link, disclaimer);
+    card.append(link, accessError, disclaimer);
   } else {
     card.append(element('p', { className: 'result-complement' }, 'Se a sua situação mudar, você poderá preencher o formulário novamente.'));
     const restart = createButton('Recomeçar formulário', 'button button--secondary');
     restart.addEventListener('click', () => {
       answers = initialAnswers();
+      leadId = null;
+      leadCreationPromise = null;
+      creationKey = crypto.randomUUID();
+      submitting = false;
       renderIntro();
     });
     card.append(restart);

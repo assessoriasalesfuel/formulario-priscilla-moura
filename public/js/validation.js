@@ -46,8 +46,3 @@ export function validateEmail(value) {
   const valid = normalized.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u.test(normalized);
   return { valid, value: normalized, error: valid ? '' : 'Informe um e-mail válido.' };
 }
-
-export function validateState(value, validStateCodes) {
-  const valid = validStateCodes.includes(value);
-  return { valid, value, error: valid ? '' : 'Selecione um estado.' };
-}

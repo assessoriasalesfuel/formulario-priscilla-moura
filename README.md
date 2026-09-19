@@ -1,6 +1,6 @@
 # Formulário de qualificação — Dra. Priscilla Cerqueira Moura
 
-Aplicação web mobile-first para uma análise inicial rápida de potenciais clientes. O fluxo apresenta uma pergunta por tela, valida os dados no navegador, classifica o perfil localmente e libera o contato por WhatsApp apenas para leads qualificados.
+Aplicação web mobile-first para uma análise inicial rápida de potenciais clientes. O fluxo apresenta uma pergunta por tela, persiste o acompanhamento na aba `Leads` de uma planilha Google Sheets e libera o contato por WhatsApp somente após confirmação server-side de um lead qualificado.
 
 ## Stack
 
@@ -8,6 +8,7 @@ Aplicação web mobile-first para uma análise inicial rápida de potenciais cli
 - JavaScript puro com ES Modules
 - Node.js 22 ou superior
 - Express 5
+- Google Sheets API (`googleapis`)
 - `node:test`
 - npm
 
@@ -20,12 +21,15 @@ Aplicação web mobile-first para uma análise inicial rápida de potenciais cli
 │   ├── styles.css             # sistema visual responsivo
 │   └── js/
 │       ├── app.js             # estado, renderização e navegação
-│       ├── questions.js       # perguntas, opções e estados brasileiros
+│       ├── questions.js       # perguntas e opções do formulário
 │       ├── validation.js      # normalização e validações puras
 │       ├── qualification.js   # classificação e prioridade
 │       ├── whatsapp.js        # configuração e criação do link
-│       └── leadGateway.js     # contrato da futura persistência (desativado)
-├── test/                      # testes dos módulos puros
+│       └── leadGateway.js     # chamadas HTTP ao backend
+├── server/
+│   ├── googleSheets.js        # autenticação e operações na aba Leads
+│   └── leadService.js         # validação, classificação e persistência
+├── test/                      # testes unitários e de integração simulada
 ├── Dockerfile                 # imagem de produção com Node.js 22
 ├── .dockerignore              # exclusões do contexto de build
 ├── server.js                  # servidor e health check
@@ -50,6 +54,22 @@ npm run dev
 
 É possível alterar a porta pela variável de ambiente `PORT`.
 
+## Google Sheets e variáveis de ambiente
+
+Configure estas variáveis somente no backend:
+
+```text
+GOOGLE_SHEET_ID=
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_PRIVATE_KEY=
+```
+
+Use `.env.example` apenas como referência. O projeto não carrega `.env` automaticamente: em produção, configure os valores no painel do serviço. A chave privada pode ser armazenada com quebras de linha representadas por `\n`; o servidor faz a normalização antes de autenticar.
+
+A Service Account precisa ter permissão de **Editor** na planilha existente. Compartilhe a planilha com o e-mail configurado em `GOOGLE_SERVICE_ACCOUNT_EMAIL`. Nunca coloque credenciais reais no GitHub.
+
+Somente a aba `Leads` é escrita. As abas derivadas `Qualificados` e `Desqualificados` não são alteradas diretamente.
+
 ## Docker
 
 Para construir e executar a imagem localmente:
@@ -67,7 +87,7 @@ A imagem utiliza Node.js 22 Alpine, instala somente dependências de produção,
 npm test
 ```
 
-Os testes cobrem normalização e validação de nome, telefone e e-mail, todos os critérios de classificação e prioridade, e a geração/codificação do link do WhatsApp.
+Os testes cobrem validações, classificação, prioridade, persistência simulada, idempotência, proteção contra fórmulas, falhas do Sheets e controle server-side do WhatsApp. Nenhum teste acessa o Google Sheets real.
 
 ## Health check
 
@@ -77,7 +97,7 @@ Os testes cobrem normalização e validação de nome, telefone e e-mail, todos 
 {"status":"ok"}
 ```
 
-O Express publica somente o conteúdo de `public/`; arquivos da raiz, testes e configuração não são expostos. O servidor não recebe nem registra dados pessoais.
+O Express publica somente o conteúdo de `public/`; arquivos da raiz, testes, módulos do backend e configurações não são expostos. O servidor recebe os dados necessários para persistência, mas não registra payloads nem dados pessoais em logs.
 
 ## Classificação
 
@@ -89,22 +109,20 @@ O lead é desqualificado quando seleciona situação diferente, está apenas pes
 - `high`: medida em vigor sem conhecimento dos prazos;
 - `normal`: sem prazo/medida oficial ou quando não sabe informar.
 
-A função pura `classifyLead` centraliza essas regras. Quando houver integração com Google Sheets, a mesma classificação deverá obrigatoriamente ser repetida e validada no servidor. A classificação do navegador não poderá ser a única fonte de verdade em produção.
+A função pura `classifyLead` centraliza essas regras e é executada novamente no servidor durante a conclusão. Classificação, prioridade e motivo enviados pelo navegador são ignorados.
 
 ## WhatsApp
 
 - Número: `5527998737944`
 - Mensagem: `Olá, Dra. Priscilla. Acabei de preencher o formulário de análise inicial e gostaria de conversar sobre minha situação.`
 
-O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada com `encodeURIComponent`. Não há redirecionamento automático.
+O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada com `encodeURIComponent`. Ele só é retornado pelo servidor depois de confirmar que o lead está concluído e qualificado. Não há redirecionamento automático.
 
-## Limitações desta primeira fase
+## Limitações atuais
 
-- Os dados permanecem apenas na memória da página e não são persistidos.
-- Atualizar a página reinicia o formulário.
-- A classificação ocorre somente no navegador.
-- `leadGateway.js` declara explicitamente que a persistência externa não está configurada.
-- Não há Google Sheets, banco de dados, classificação no servidor, proteção antispam, Meta Pixel, Meta Conversions API, UTMs ou salvamento parcial externo.
+- O Lead ID permanece somente na memória da página; atualizar a página reinicia a sessão do formulário.
+- A idempotência da criação combina uma chave mantida em memória no navegador e no processo do servidor. Não substitui um armazenamento transacional distribuído em ambientes com múltiplas réplicas.
+- Não há proteção antispam, limitação de requisições, Meta Pixel, Meta Conversions API ou captura de UTMs e metadados de marketing.
 - A URL da Política de Privacidade ainda não está configurada; o ponto futuro está documentado em `app.js` e nenhum link fictício é mostrado.
 - Logo e favicons são provisoriamente substituídos por texto.
 - Ainda não há configuração específica de EasyPanel nem deploy concluído.
@@ -112,4 +130,4 @@ O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada 
 
 ## Próximas integrações
 
-Em uma fase futura: endpoint seguro no servidor, validação e classificação server-side, persistência no Google Sheets, proteção antispam e limitação de requisições, política de privacidade definitiva, rastreamento consentido para Meta Ads e configuração final do ambiente de deploy.
+Em uma fase futura: proteção antispam e limitação de requisições, política de privacidade definitiva, UTMs e metadados de marketing, rastreamento consentido para Meta Ads e configuração final do ambiente de deploy.
