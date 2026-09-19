@@ -4,8 +4,13 @@ import {
   validatePhone,
 } from './validation.js';
 import { completeLead, createLead, registerWhatsAppAccess, updateLead } from './leadGateway.js';
+import { captureAttribution } from './attribution.js';
+import {
+  trackFormCompleted, trackFormStarted, trackQualifiedLead, trackWhatsAppContact,
+} from './metaPixel.js';
 
 const app = document.querySelector('#app');
+const attribution = captureAttribution();
 const initialAnswers = () => ({
   name: '', phone: '', email: '', situation: '', concern: '', urgency: '', hiring: '',
   dataConsent: false, contactConsent: false,
@@ -58,7 +63,10 @@ function renderIntro() {
   const copy = element('p', { className: 'lead' }, 'Responda algumas perguntas rápidas para identificarmos como podemos ajudar.');
   const time = element('p', { className: 'time-note' }, 'Leva aproximadamente 1 minuto.');
   const button = createButton('Começar');
-  button.addEventListener('click', () => renderStep(0));
+  button.addEventListener('click', () => {
+    trackFormStarted();
+    renderStep(0);
+  });
   card.append(eyebrow, title, copy, time, button);
   app.append(card);
   focusPrimary();
@@ -104,6 +112,7 @@ async function ensureLeadCreated() {
       phone: answers.phone,
       email: answers.email,
       lastStep: 'email',
+      ...attribution,
     }, creationKey).then((result) => {
       leadId = result.leadId;
       return leadId;
@@ -242,6 +251,8 @@ function createConsentQuestion(form) {
     submitButton.disabled = true;
     try {
       const result = await completeLead(leadId, answers);
+      trackFormCompleted();
+      trackQualifiedLead(result.qualified);
       renderResult(result);
     } catch (saveError) {
       error.textContent = friendlySaveError(saveError);
@@ -312,6 +323,7 @@ function renderResult(result) {
       accessError.hidden = true;
       try {
         const { link: whatsappLink } = await registerWhatsAppAccess(leadId);
+        trackWhatsAppContact();
         window.open(whatsappLink, '_blank', 'noopener,noreferrer');
       } catch (saveError) {
         accessError.textContent = friendlySaveError(saveError);

@@ -11,7 +11,22 @@ const COLUMNS = Object.freeze({
   situation: 8, concern: 9, urgency: 10, hiring: 11, reason: 12, lastStep: 13, updatedAt: 14,
   completedAt: 15, whatsappAccessed: 16, whatsappAccessedAt: 17, dataConsent: 18,
   contactConsent: 19, consentAt: 20,
+  utmSource: 21, utmMedium: 22, utmCampaign: 23, utmContent: 24, utmTerm: 25,
+  fbclid: 26, entryUrl: 27, referrer: 28, device: 29,
 });
+
+const ATTRIBUTION_LIMITS = Object.freeze({
+  utmSource: 255,
+  utmMedium: 255,
+  utmCampaign: 255,
+  utmContent: 255,
+  utmTerm: 255,
+  fbclid: 512,
+  entryUrl: 2000,
+  referrer: 2000,
+});
+const DEVICES = new Set(['Mobile', 'Tablet', 'Desktop']);
+const CREATE_FIELDS = new Set(['name', 'phone', 'email', 'lastStep', ...Object.keys(ATTRIBUTION_LIMITS), 'device']);
 
 const PRIORITY_LABELS = Object.freeze({ urgent: 'urgente', high: 'alta', normal: 'normal' });
 const STEP_IDS = new Set(questions.map(({ id }) => id));
@@ -73,6 +88,24 @@ function applyPersonal(row, personal) {
   row[COLUMNS.ddd] = personal.phone.slice(0, 2);
 }
 
+export function normalizeAttribution(payload = {}) {
+  const normalized = {};
+  Object.entries(ATTRIBUTION_LIMITS).forEach(([key, limit]) => {
+    normalized[key] = typeof payload[key] === 'string'
+      ? Array.from(payload[key]).slice(0, limit).join('')
+      : '';
+  });
+  normalized.device = DEVICES.has(payload.device) ? payload.device : '';
+  return normalized;
+}
+
+function applyAttribution(row, attribution) {
+  Object.keys(ATTRIBUTION_LIMITS).forEach((key) => {
+    row[COLUMNS[key]] = protectSheetText(attribution[key]);
+  });
+  row[COLUMNS.device] = attribution.device;
+}
+
 function toSheetLabel(id, value) {
   return protectSheetText(OPTION_LABELS.get(`${id}:${value}`));
 }
@@ -90,7 +123,11 @@ export function createLeadService({ repository, now = () => new Date(), createId
 
   async function create(payload) {
     ensureObject(payload);
+    if (Object.keys(payload).some((key) => !CREATE_FIELDS.has(key))) {
+      throw new LeadServiceError('Payload de criação inválido.');
+    }
     const personal = validatePersonal(payload);
+    const attribution = normalizeAttribution(payload);
     const lastStep = validateLastStep(payload.lastStep);
     const timestamp = now().toISOString();
     const leadId = createId();
@@ -99,6 +136,7 @@ export function createLeadService({ repository, now = () => new Date(), createId
     row[COLUMNS.createdAt] = timestamp;
     row[COLUMNS.status] = 'Em preenchimento';
     applyPersonal(row, personal);
+    applyAttribution(row, attribution);
     row[COLUMNS.lastStep] = lastStep;
     row[COLUMNS.updatedAt] = timestamp;
     await repository.append(row);
@@ -200,4 +238,3 @@ export function createLeadService({ repository, now = () => new Date(), createId
     },
   };
 }
-

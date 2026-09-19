@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLeadService, protectSheetText } from '../server/leadService.js';
+import { createLeadService, normalizeAttribution, protectSheetText } from '../server/leadService.js';
 import { WHATSAPP_MESSAGE, WHATSAPP_NUMBER } from '../public/js/whatsapp.js';
 
 const FIXED_DATE = new Date('2026-09-18T12:00:00.000Z');
@@ -232,7 +232,60 @@ test('protege textos iniciados por operadores de fórmula', async () => {
   assert.equal(repository.rows[0][4], "'=Ana");
 });
 
-test('persiste rótulos legíveis e mantém metadados futuros vazios', async () => {
+test('criação persiste os nove campos de atribuição nas colunas 22 a 30', async () => {
+  const { repository, service } = setup();
+  await createInitial(service, {
+    utmSource: 'facebook',
+    utmMedium: 'paid_social',
+    utmCampaign: 'campanha',
+    utmContent: 'criativo-a',
+    utmTerm: 'termo',
+    fbclid: 'fbclid-123',
+    entryUrl: 'https://example.com/?utm_source=facebook',
+    referrer: 'https://facebook.com/',
+    device: 'Mobile',
+  });
+  assert.deepEqual(repository.rows[0].slice(21, 30), [
+    'facebook', 'paid_social', 'campanha', 'criativo-a', 'termo', 'fbclid-123',
+    'https://example.com/?utm_source=facebook', 'https://facebook.com/', 'Mobile',
+  ]);
+});
+
+test('ausência de UTMs não impede a criação', async () => {
+  const { repository, service } = setup();
+  await createInitial(service);
+  assert.equal(repository.rows.length, 1);
+  assert.deepEqual(repository.rows[0].slice(21, 30), Array(9).fill(''));
+});
+
+test('protege atribuição contra formula injection', async () => {
+  const { repository, service } = setup();
+  await createInitial(service, { utmSource: '=IMPORTXML("url")', utmCampaign: '+comando' });
+  assert.equal(repository.rows[0][21], "'=IMPORTXML(\"url\")");
+  assert.equal(repository.rows[0][23], "'+comando");
+});
+
+test('trunca campos de atribuição nos limites definidos', () => {
+  const normalized = normalizeAttribution({
+    utmSource: 'a'.repeat(300),
+    fbclid: 'b'.repeat(600),
+    entryUrl: 'c'.repeat(2100),
+    referrer: 'd'.repeat(2100),
+    device: 'SmartTV',
+  });
+  assert.equal(normalized.utmSource.length, 255);
+  assert.equal(normalized.fbclid.length, 512);
+  assert.equal(normalized.entryUrl.length, 2000);
+  assert.equal(normalized.referrer.length, 2000);
+  assert.equal(normalized.device, '');
+});
+
+test('rejeita campos desconhecidos na criação', async () => {
+  const { service } = setup();
+  await assert.rejects(() => createInitial(service, { unknownTracking: 'value' }), /criação inválido/u);
+});
+
+test('persiste rótulos legíveis sem alterar atribuição ausente', async () => {
   const { repository, service } = setup();
   await createInitial(service);
   await service.completeLead(LEAD_ID, qualifiedAnswers);

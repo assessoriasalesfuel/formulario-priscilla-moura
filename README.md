@@ -118,11 +118,27 @@ A função pura `classifyLead` centraliza essas regras e é executada novamente 
 
 O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada com `encodeURIComponent`. Ele só é retornado pelo servidor depois de confirmar que o lead está concluído e qualificado. Não há redirecionamento automático.
 
+## Meta Pixel
+
+O Pixel ID `959018970525443` é inicializado uma única vez no carregamento real da página. Os eventos configurados são:
+
+- `PageView`: carregamento real da página;
+- `FormStarted`: primeiro clique em “Começar”;
+- `FormCompleted`: conclusão confirmada pelo backend e pelo Google Sheets;
+- `Lead`: somente para leads qualificados pelo backend;
+- `Contact`: acesso ao WhatsApp confirmado pelo backend.
+
+Nenhum dado pessoal, resposta do formulário, informação jurídica ou identificador do CRM é enviado como parâmetro à Meta. Advanced Matching e Meta Conversions API (CAPI) não estão implementados.
+
+## Atribuição
+
+No primeiro carregamento são capturados `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `fbclid`, URL de entrada, referrer e uma categoria genérica de dispositivo. Esses dados permanecem em memória até a criação do lead e são gravados nas colunas de atribuição da aba `Leads`. Não há armazenamento em `localStorage` ou `sessionStorage`, nem persistência do User-Agent completo.
+
 ## Limitações atuais
 
 - O Lead ID permanece somente na memória da página; atualizar a página reinicia a sessão do formulário.
 - A idempotência da criação combina uma chave mantida em memória no navegador e no processo do servidor. Não substitui um armazenamento transacional distribuído em ambientes com múltiplas réplicas.
-- Não há proteção antispam, limitação de requisições, Meta Pixel, Meta Conversions API ou captura de UTMs e metadados de marketing.
+- Não há proteção antispam, limitação de requisições ou Meta Conversions API.
 - A URL da Política de Privacidade ainda não está configurada; o ponto futuro está documentado em `app.js` e nenhum link fictício é mostrado.
 - Logo e favicons são provisoriamente substituídos por texto.
 - Ainda não há configuração específica de EasyPanel nem deploy concluído.
@@ -130,4 +146,4 @@ O link usa `https://wa.me/`, número somente com dígitos e mensagem codificada 
 
 ## Próximas integrações
 
-Em uma fase futura: proteção antispam e limitação de requisições, política de privacidade definitiva, UTMs e metadados de marketing, rastreamento consentido para Meta Ads e configuração final do ambiente de deploy.
+Em uma fase futura: proteção antispam e limitação de requisições, política de privacidade definitiva, Meta Conversions API e configuração final do ambiente de deploy.
